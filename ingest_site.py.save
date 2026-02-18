@@ -1,0 +1,100 @@
+import re
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urldefrag, urlparse
+
+import chromadb
+import voyageai
+from dotenv import load_dotenv
+
+load_dotenv()
+
+START_URL = "https://shoptimistusa.com/"
+MAX_PAGES = 30
+
+def clean_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+def html_to_text(html: str) -> str:
+    soup = BeautifulSoup(html, "lxml")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    return clean_text(soup.get_text(" "))
+
+def same_domain(url: str, base: str) -> bool:
+    return urlparse(url).netloc == urlparse(base).netloc
+
+def chunk_text(text: str, chunk_size: int = 900, overlap: int = 150):
+    chunks = []
+    i = 0
+    while i < len(text):
+        chunks.append(text[i:i + chunk_size])
+        i += chunk_size - overlap
+    return chunks
+
+def crawl(start_url: str, max_pages: int):
+    seen = set()
+    queue = [start_url]
+    pages = []
+
+    while queue and len(pages) < max_pages:
+        url = queue.pop(0)
+        url, _ = urldefrag(url)
+        if url in seen:
+            continue
+        seen.add(url)
+
+        try:
+            r = requests.get(url, timeout=15, headers={"User-Agent": "SiteRAGBot/1.0"})
+            print(f"[{r.status_code}] {url} | Content-Type: {r.headers.get('Content-Type', 'N/A')}")
+            if r.status_code != 200:
+                continue
+            if "text/html" not in r.headers.get("Content-Type", ""):
+                continue
+        except Exception as e:
+            print(f"[ERROR] {url} — {e}")
+            continue
+
+        text = html_to_text(r.text)
+        print(f"  Text length: {len(text)}")
+        if len(text) < 200:
+            continue
+
+        pages.append((url, text))
+
+        soup = BeautifulSoup(r.text, "lxml")
+        for a in soup.select("a[href]"):
+            nxt = urljoin(url, a["href"])
+            nxt, _ = urldefrag(nxt)
+            if same_domain(nxt, start_url) and nxt.startswith(start_url):
+                if nxt not in seen:
+                    queue.append(nxt)
+
+    return pages
+
+def main():
+    vo = voyageai.Client()
+
+    client = chromadb.PersistentClient(path="chroma_db")
+    col = client.get_or_create_collection(name="website")
+
+    pages = crawl(START_URL, MAX_PAGES)
+
+    ids, docs, metas = [], [], []
+    for url, text in pages:
+        for idx, ch in enumerate(chunk_text(text)):
+            ids.append(f"{url}::chunk{idx}")
+            docs.append(ch)
+            metas.append({"url": url, "chunk": idx})
+
+    if not docs:
+        print("No pages ingested. Check START_URL or site blocking.")
+        return
+
+    emb = vo.embed(texts=docs, model="voyage-3-large", input_type="document").embeddings
+    col.upsert(ids=ids, documents=docs, metadatas=metas, embeddings=emb)
+
+    print(f"Stored {len(docs)} chunks from {len(pages)} pages into chroma_db.")
+
+if __name__ == "__main__":
+    main()
