@@ -72,7 +72,7 @@ QUESTION: {user_message}"""
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'ok', 'chunks': col.count()})
+    return jsonify({'status': 'ok', 'chunks': col.count(), 'path': os.path.abspath('chroma_db')})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
