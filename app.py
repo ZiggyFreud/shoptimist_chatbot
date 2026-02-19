@@ -43,7 +43,6 @@ def chat():
         client = anthropic.Anthropic(api_key=api_key)
         
         system_prompt = """You are a helpful assistant for Shoptimist USA (shoptimistusa.com).
-Answer questions using only the context provided from the website.
 Use the context to give a helpful, specific answer. Extract and summarize relevant information even if it's not perfectly organized.
 Always be friendly and helpful."""
         
