@@ -44,7 +44,7 @@ def chat():
         
         system_prompt = """You are a helpful assistant for Shoptimist USA (shoptimistusa.com).
 Answer questions using only the context provided from the website.
-If the context doesn't contain enough information to answer, say so honestly.
+Use the context to give a helpful, specific answer. Extract and summarize relevant information even if it's not perfectly organized.
 Always be friendly and helpful."""
         
         full_message = f"""Use the following content from the Shoptimist USA website to answer the question.
